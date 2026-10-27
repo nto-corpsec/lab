@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Validate compose
+        run: docker compose config -q
+      - name: yamllint
+        run: uvx --from "yamllint==1.35.1" yamllint -c .yamllint.yml compose.yaml .github/
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+  docs:
+    name: docs
+    uses: nto-corpsec/.github/.github/workflows/reusable-docs.yml@main
+
+  security:
+    name: security
+    uses: nto-corpsec/.github/.github/workflows/reusable-security.yml@main
+    with:
+      semgrep-config: p/secrets
+      run-gitleaks: true
+
+  no-leak:
+    name: no-leak
+    uses: nto-corpsec/.github/.github/workflows/reusable-no-leak.yml@main
+
+  gate:
+    name: gate
+    if: always()
+    needs: [config, docs, security, no-leak]
+    runs-on: ubuntu-latest
+    env:
+      RESULT_CONFIG: ${{ needs.config.result }}
+      RESULT_DOCS: ${{ needs.docs.result }}
+      RESULT_SECURITY: ${{ needs.security.result }}
+      RESULT_NO_LEAK: ${{ needs.no-leak.result }}
+    steps:
+      - name: All gates must pass
+        run: |
+          set -euo pipefail
+          failed=0
+          echo "config: $RESULT_CONFIG"
+          [ "$RESULT_CONFIG" = "success" ] || failed=1
+          echo "docs: $RESULT_DOCS"
+          [ "$RESULT_DOCS" = "success" ] || failed=1
+          echo "security: $RESULT_SECURITY"
+          [ "$RESULT_SECURITY" = "success" ] || failed=1
+          echo "no-leak: $RESULT_NO_LEAK"
+          [ "$RESULT_NO_LEAK" = "success" ] || failed=1
+          exit "$failed"

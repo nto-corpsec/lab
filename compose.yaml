@@ -1,0 +1,35 @@
+name: nto-lab
+
+services:
+  juice-shop:
+    image: bkimminich/juice-shop:v20.3.0
+    profiles: ["web"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  dvwa:
+    image: vulnerables/web-dvwa:1.9
+    profiles: ["web"]
+    ports:
+      - "127.0.0.1:8081:80"
+    environment:
+      MYSQL_PASS: "p@ssw0rd"
+    restart: unless-stopped
+
+  zeek:
+    image: zeek/zeek:9.0.0
+    profiles: ["net"]
+    working_dir: /logs
+    volumes:
+      - ./pcaps:/pcaps:ro
+      - ./logs/zeek:/logs
+    command: ["zeek", "-r", "/pcaps/sample.pcap", "local"]
+
+  sandbox:
+    image: debian:13-slim
+    profiles: ["sandbox"]
+    network_mode: none
+    volumes:
+      - ./samples:/samples:ro
+    command: ["sleep", "infinity"]
